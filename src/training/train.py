@@ -13,7 +13,6 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
 sys.path.append(parent_dir)
 
-from src.environments.custom_lunar_lander import CustomLunarLander
 
 def register_environment():
     if 'CustomLunarLander-v3' not in gym.envs.registry:
@@ -30,8 +29,8 @@ def main():
     # Configuration Parameters
     MODEL_DIR = "../../models/"
     LOG_DIR = "../../data/logs/"
-    NUM_EPISODES = 10
-    MAX_TIMESTEPS = 1_000_000
+    NUM_EPISODES = 10 # Num of times from start to land
+    MAX_TIMESTEPS = 1_000_000 # Num of actions from start to land
     STEP_INCREMENT = 20_000
     EVAL_FREQUENCY = 10  # Evaluate every 10 training increments
     GOAL_REWARD = 200.0
