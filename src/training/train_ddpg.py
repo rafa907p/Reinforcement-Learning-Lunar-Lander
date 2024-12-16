@@ -3,7 +3,6 @@ import gymnasium as gym
 from gymnasium.envs.registration import register
 from stable_baselines3 import DDPG
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
-from stable_baselines3.common.monitor import Monitor
 import os
 import sys
 
@@ -43,21 +42,18 @@ def main():
     os.makedirs(LOG_DIR, exist_ok=True)
     print(f"Directories '{MODEL_DIR}' and '{LOG_DIR}' are ready.")
 
-    # Create the training environment and wrap with Monitor
-    train_env = Monitor(
-        gym.make(
-            "CustomLunarLander-v3",
-            continuous=True,  # DDPG needs continuous actions
-            gravity=-10.0,
-            enable_wind=True,
-            wind_power=10.0,
-            turbulence_power=1.0,
-            observation_noise=0.02,
-            partial_observation=True
-        ),
-        filename=os.path.join(LOG_DIR, "monitor_train.csv")
+    # Create the training environment without Monitor
+    train_env = gym.make(
+        "CustomLunarLander-v3",
+        continuous=True,  # DDPG needs continuous actions
+        gravity=-10.0,
+        enable_wind=True,
+        wind_power=10.0,
+        turbulence_power=1.0,
+        observation_noise=0.02,
+        partial_observation=True
     )
-    print("Training environment created and wrapped with Monitor for DDPG.")
+    print("Training environment created for DDPG.")
 
     # Initialize the DDPG agent
     model = DDPG(
@@ -76,21 +72,18 @@ def main():
     )
     print("DDPG agent initialized.")
 
-    # Create a separate evaluation environment and wrap with Monitor
-    eval_env = Monitor(
-        gym.make(
-            "CustomLunarLander-v3",
-            continuous=True,
-            gravity=-10.0,
-            enable_wind=True,
-            wind_power=10.0,
-            turbulence_power=1.0,
-            observation_noise=0.02,
-            partial_observation=True
-        ),
-        filename=os.path.join(LOG_DIR, "monitor_eval.csv")
+    # Create the evaluation environment without Monitor
+    eval_env = gym.make(
+        "CustomLunarLander-v3",
+        continuous=True,
+        gravity=-10.0,
+        enable_wind=True,
+        wind_power=10.0,
+        turbulence_power=1.0,
+        observation_noise=0.02,
+        partial_observation=True
     )
-    print("Evaluation environment created and wrapped with Monitor.")
+    print("Evaluation environment created.")
 
     # Define the evaluation callback
     eval_callback = EvalCallback(
