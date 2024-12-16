@@ -7,7 +7,7 @@ import numpy as np
 class CustomLunarLander(LunarLander):
     def __init__(
         self,
-        continuous=False,
+        continuous=True,
         gravity=-10.0,
         enable_wind=True,
         wind_power=10.0,
