@@ -9,7 +9,10 @@ import sys
 
 # Ensure that src is in the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
+#parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
+
+# Windows Version
+parent_dir = os.path.abspath(os.path.join(current_dir, '../../'))
 sys.path.append(parent_dir)
 
 def register_environment():
