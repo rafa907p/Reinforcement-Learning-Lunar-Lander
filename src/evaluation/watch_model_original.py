@@ -9,22 +9,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
 sys.path.append(project_root)
 
-
-def register_environment():
-    gym.register(
-        id='CustomLunarLander-v3',
-        entry_point='src.environments.custom_lunar_lander:CustomLunarLander',
-        max_episode_steps=1000,
-        reward_threshold=200,
-    )
-
-
 def main():
-    # Register the custom environment
-    register_environment()
-
-    # Path to your trained TD3 model
-    model_path = os.path.join(project_root, "src", "models", "td3", "custom", "td3_CustomLunarLander-v3_trial_3.zip")
+    # Path to your trained TD3 model for the original environment
+    model_path = os.path.join(project_root, "src", "models", "td3", "original", "td3_LunarLanderContinuous-v3_trial_1.zip")
 
     # Load the trained TD3 model
     if not os.path.exists(model_path):
@@ -33,16 +20,13 @@ def main():
 
     model = TD3.load(model_path)
 
-    # Create the environment with render_mode set to 'rgb_array'
+    # Create the original LunarLander environment with render_mode set to 'rgb_array'
     env = gym.make(
-        "CustomLunarLander-v3",
-        continuous=True,
+        "LunarLanderContinuous-v3",
         gravity=-10.0,
         enable_wind=True,
         wind_power=10.0,
         turbulence_power=1.0,
-        observation_noise=0.02,
-        partial_observation=True,
         render_mode="rgb_array"
     )
 
@@ -72,12 +56,11 @@ def main():
         # Save the episode as a GIF
         video_dir = os.path.join(project_root, "data", "videos")
         os.makedirs(video_dir, exist_ok=True)
-        video_path = os.path.join(video_dir, f"episode_{episode + 1}.gif")
+        video_path = os.path.join(video_dir, f"episode_original_{episode + 1}.gif")
         imageio.mimsave(video_path, frames, fps=30)
         print(f"Episode {episode + 1}: Total Reward = {total_reward}, Steps = {step}, Video saved to {video_path}")
 
     env.close()
-
 
 if __name__ == "__main__":
     main()
