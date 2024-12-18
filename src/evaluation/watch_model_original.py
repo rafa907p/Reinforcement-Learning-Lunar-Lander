@@ -20,15 +20,8 @@ def main():
 
     model = TD3.load(model_path)
 
-    # Create the original LunarLander environment with render_mode set to 'rgb_array'
-    env = gym.make(
-        "LunarLanderContinuous-v3",
-        gravity=-10.0,
-        enable_wind=True,
-        wind_power=10.0,
-        turbulence_power=1.0,
-        render_mode="rgb_array"
-    )
+    # Create the original LunarLanderContinuous-v3 environment
+    env = gym.make("LunarLanderContinuous-v3", render_mode="rgb_array")
 
     num_episodes = 5  # Number of episodes to watch
 
