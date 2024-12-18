@@ -1,127 +1,189 @@
-# train_td3.py
-import gymnasium as gym
-from gymnasium.envs.registration import register
-from stable_baselines3 import TD3
-from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
-from stable_baselines3.common.monitor import Monitor
-import os
-import sys
+    import gymnasium as gym
+    from gymnasium.envs.registration import register
+    from stable_baselines3 import TD3
+    from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
+    import optuna
+    import os
+    import sys
+    import json
 
-# Ensure that src is in the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
-sys.path.append(parent_dir)
+    # Fix the Python path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(current_dir, '..'))
+    sys.path.append(project_root)
 
-def register_environment():
-    if 'CustomLunarLander-v3' not in gym.envs.registry:
-        register(
-            id='CustomLunarLander-v3',
-            entry_point='src.environments.custom_lunar_lander:CustomLunarLander',
-            max_episode_steps=1000,
-            reward_threshold=200,
-        )
-    else:
-        print("Environment 'CustomLunarLander-v3' is already registered.")
+    # Import the custom environment
+    try:
+        from src.environments.custom_lunar_lander import CustomLunarLander
+    except ImportError as e:
+        print("Error importing CustomLunarLander:", e)
+        sys.exit(1)
 
-def main():
-    # Configuration Parameters
-    MODEL_DIR = "../models/td3/"
-    LOG_DIR = "../data/logs/td3/"
-    NUM_EPISODES = 10
-    MAX_TIMESTEPS = 1_000_000
-    STEP_INCREMENT = 20_000
-    EVAL_FREQUENCY = 10
+    # Paths
+    MODELS_DIR = "../models/td3/"
+    LOGS_DIR = "../data/logs/td3/"
+    ORIGINAL_ENV_ID = "LunarLanderContinuous-v3"
+    CUSTOM_ENV_ID = "CustomLunarLander-v3"
     GOAL_REWARD = 200.0
 
-    print("Starting TD3 training on Custom Lunar Lander environment (continuous mode).")
-
     # Register the custom environment
-    register_environment()
+    def register_custom_environment():
+        try:
+            gym.make(CUSTOM_ENV_ID)
+        except gym.error.UnregisteredEnv:
+            register(
+                id=CUSTOM_ENV_ID,
+                entry_point="src.environments.custom_lunar_lander:CustomLunarLander",
+                max_episode_steps=1000,
+                reward_threshold=GOAL_REWARD,
+            )
+            print(f"Registered '{CUSTOM_ENV_ID}' environment.")
+        else:
+            print(f"'{CUSTOM_ENV_ID}' environment is already registered.")
 
-    # Create directories
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    os.makedirs(LOG_DIR, exist_ok=True)
-    print(f"Directories '{MODEL_DIR}' and '{LOG_DIR}' are ready.")
+    # Create environment with selective arguments
+    def create_environment(env_id, **kwargs):
+        if env_id == CUSTOM_ENV_ID:
+            return gym.make(env_id, **kwargs)
+        else:
+            return gym.make(env_id)
 
-    # Create the training environment and wrap it with Monitor
-    train_env = Monitor(
-        gym.make(
-            "CustomLunarLander-v3",
-            continuous=True,  # Set to continuous for TD3
-            gravity=-10.0,
-            enable_wind=True,
-            wind_power=10.0,
-            turbulence_power=1.0,
-            observation_noise=0.02,
-            partial_observation=True
-        ),
-        filename=os.path.join(LOG_DIR, "monitor_train.csv")
-    )
-    print("Training environment created and wrapped with Monitor for TD3.")
+    # Save metrics to a JSON file
+    def save_metrics(metrics, file_path):
+        with open(file_path, 'w') as f:
+            json.dump(metrics, f, indent=4)
+        print(f"Metrics saved to {file_path}")
 
-    # Initialize the TD3 agent
-    model = TD3(
-        'MlpPolicy',
-        train_env,
-        verbose=1,
-        learning_rate=3e-4,
-        buffer_size=1000000,
-        batch_size=256,
-        gamma=0.99,
-        tau=0.02,
-        train_freq=(1, 'step'),
-        gradient_steps=1,
-        tensorboard_log=LOG_DIR,
-        seed=42
-    )
-    print("TD3 agent initialized.")
+    # Define Optuna objective function for hyperparameter tuning
+    def objective(trial, env_id, model_dir, log_dir):
+        env = create_environment(env_id, continuous=True, partial_observation=True, observation_noise=0.02)
 
-    # Create a separate evaluation environment and wrap with Monitor
-    eval_env = Monitor(
-        gym.make(
-            "CustomLunarLander-v3",
-            continuous=True,  # Ensure continuous for evaluation
-            gravity=-10.0,
-            enable_wind=True,
-            wind_power=10.0,
-            turbulence_power=1.0,
-            observation_noise=0.02,
-            partial_observation=True
-        ),
-        filename=os.path.join(LOG_DIR, "monitor_eval.csv")
-    )
-    print("Evaluation environment created and wrapped with Monitor.")
+        # Suggest hyperparameters using Optuna
+        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
+        batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512])
+        tau = trial.suggest_float("tau", 0.005, 0.05)
+        gamma = trial.suggest_float("gamma", 0.95, 0.999)
+        buffer_size = trial.suggest_categorical("buffer_size", [100000, 500000, 1000000])
 
-    # Define the evaluation callback
-    eval_callback = EvalCallback(
-        eval_env,
-        callback_on_new_best=StopTrainingOnRewardThreshold(reward_threshold=GOAL_REWARD, verbose=1),
-        eval_freq=STEP_INCREMENT * EVAL_FREQUENCY,
-        n_eval_episodes=NUM_EPISODES,
-        best_model_save_path=MODEL_DIR,
-        log_path=LOG_DIR,
-        deterministic=True,
-        render=False
-    )
-    print("Evaluation callback defined for TD3.")
+        # Initialize the TD3 model
+        model = TD3(
+            "MlpPolicy",
+            env,
+            learning_rate=learning_rate,
+            batch_size=batch_size,
+            tau=tau,
+            gamma=gamma,
+            buffer_size=buffer_size,
+            train_freq=(1, "step"),
+            gradient_steps=1,
+            verbose=0,
+            tensorboard_log=log_dir,
+            seed=42,
+        )
 
-    # Train the model
-    try:
-        print(f"Starting TD3 training for a total of {MAX_TIMESTEPS} timesteps...")
-        model.learn(total_timesteps=MAX_TIMESTEPS, callback=eval_callback)
-        print("TD3 training completed successfully.")
-    except KeyboardInterrupt:
-        print("TD3 training interrupted by user.")
-    except Exception as e:
-        print(f"An error occurred during TD3 training: {e}")
-    finally:
-        final_model_path = os.path.join(MODEL_DIR, "td3_custom_lunar_lander")
-        model.save(final_model_path)
-        print(f"Final TD3 model saved to {final_model_path}.zip")
+        # Callback to stop training when reward threshold is reached
+        eval_callback = EvalCallback(
+            env,
+            callback_on_new_best=StopTrainingOnRewardThreshold(reward_threshold=GOAL_REWARD, verbose=1),
+            eval_freq=10_000,
+            n_eval_episodes=5,
+            log_path=log_dir,
+            deterministic=True,
+            render=False,
+        )
 
-        train_env.close()
-        eval_env.close()
-        print("Environments closed for TD3.")
+        # Train the model
+        model.learn(total_timesteps=200_000, callback=eval_callback)
 
-if __name__ == "__main__":
-    main()
+        # Evaluate the model
+        mean_reward, total_rewards = evaluate_model(model, env)
+        env.close()
+
+        # Save the model
+        model_path = os.path.join(model_dir, f"td3_{env_id}_trial_{trial.number}.zip")
+        model.save(model_path)
+        print(f"Model saved to {model_path}")
+
+        # Save metrics
+        metrics = {
+            "trial_number": trial.number,
+            "mean_reward": mean_reward,
+            "total_rewards": total_rewards,
+            "learning_rate": learning_rate,
+            "batch_size": batch_size,
+            "tau": tau,
+            "gamma": gamma,
+            "buffer_size": buffer_size
+        }
+        metrics_path = os.path.join(log_dir, f"metrics_trial_{trial.number}.json")
+        save_metrics(metrics, metrics_path)
+
+        return mean_reward
+
+    # Evaluate the model
+    def evaluate_model(model, env, num_episodes=10):
+        total_rewards = []
+        for _ in range(num_episodes):
+            obs, _ = env.reset()
+            done, truncated = False, False
+            episode_reward = 0
+            while not done and not truncated:
+                action, _ = model.predict(obs, deterministic=True)
+                obs, reward, done, truncated, _ = env.step(action)
+                episode_reward += reward
+            total_rewards.append(episode_reward)
+
+        mean_reward = sum(total_rewards) / len(total_rewards)
+        return mean_reward, total_rewards
+
+    # Train with Optuna
+    def train_with_optuna(env_id, model_dir, log_dir, study_name):
+        os.makedirs(model_dir, exist_ok=True)
+        os.makedirs(log_dir, exist_ok=True)
+
+        study = optuna.create_study(direction="maximize", study_name=study_name)
+        study.optimize(lambda trial: objective(trial, env_id, model_dir, log_dir), n_trials=10)
+
+        # Log best trial
+        print("Best trial:")
+        print(f"  Value: {study.best_trial.value}")
+        print("  Params: ")
+        for key, value in study.best_trial.params.items():
+            print(f"    {key}: {value}")
+
+        # Save final best trial metrics
+        best_metrics = {
+            "best_value": study.best_trial.value,
+            "best_params": study.best_trial.params
+        }
+        best_metrics_path = os.path.join(log_dir, f"{study_name}_best_metrics.json")
+        save_metrics(best_metrics, best_metrics_path)
+
+    def main():
+        # Register custom environment
+        register_custom_environment()
+
+        # Paths for models and logs
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        os.makedirs(LOGS_DIR, exist_ok=True)
+
+        # Train on Original Lunar Lander
+        print("\nTraining TD3 on Original Lunar Lander Continuous Environment...")
+        train_with_optuna(
+            ORIGINAL_ENV_ID,
+            os.path.join(MODELS_DIR, "original"),
+            os.path.join(LOGS_DIR, "original"),
+            study_name="td3_original_lander",
+        )
+
+        # Train on Custom Lunar Lander
+        print("\nTraining TD3 on Custom Lunar Lander Environment...")
+        train_with_optuna(
+            CUSTOM_ENV_ID,
+            os.path.join(MODELS_DIR, "custom"),
+            os.path.join(LOGS_DIR, "custom"),
+            study_name="td3_custom_lander",
+        )
+
+    if __name__ == "__main__":
+        main()

@@ -27,13 +27,12 @@ class CustomLunarLander(LunarLander):
         self.observation_noise = observation_noise
         self.partial_observation = partial_observation
 
-        # If partial observation is enabled, adjust the observation space
-        # Remove angular velocity (index 5) and left leg contact (index 6)
-        # Original obs has shape (8,). Removing two elements -> shape (6,)
+        # Adjust observation space if partial observation is enabled
         if self.partial_observation:
             orig_low = self.observation_space.low
             orig_high = self.observation_space.high
-            # Removing indices [5, 6] from original observation
+            # Remove angular velocity (index 5) and left leg contact (index 6)
+            # Original obs shape: (8,) -> After removal: (6,)
             new_low = np.delete(orig_low, [5, 6])
             new_high = np.delete(orig_high, [5, 6])
             self.observation_space = gym.spaces.Box(
@@ -45,25 +44,42 @@ class CustomLunarLander(LunarLander):
     def step(self, action):
         obs, reward, terminated, truncated, info = super().step(action)
 
+        # Extract angle (index 4 in original observation: obs[4] = angle)
+        # Note: If partial_observation is True, we must adjust the index since we removed data.
+        # Original obs: x, y, vx, vy, angle, angular_vel, left_leg, right_leg
+        # After removing (5, 6): we have: x, y, vx, vy, angle, right_leg
+        # angle is now at index 4 in both partial and full obs since we removed 5,6, not 4.
+        # Check length of obs to confirm indexing:
+        # If partial_observation = True, obs length = 6 -> angle at index 4
+        # If partial_observation = False, obs length = 8 -> angle at index 4 still
+        angle_index = 4
+        angle = obs[angle_index]
+
         # Reward shaping: Penalize main engine usage
-        # For continuous actions: main_thrust = action[0]
-        # For discrete: main engine action = 2
         if self.continuous:
             main_thrust = action[0]
-            # If the main_thrust is significantly engaged (>0.5), penalize
             if main_thrust > 0.5:
                 reward -= 0.1 * main_thrust
         else:
-            # In discrete mode, action==2 fires the main engine
+            # In discrete mode, main engine is action==2
             if action == 2:
                 reward -= 0.1
+
+        # New: Angle Stability Penalty
+        # Add a small penalty based on the absolute angle. The larger the angle, the bigger the penalty.
+        # For example, -0.01 * abs(angle)
+        reward -= 0.01 * abs(angle)
+
+        # New: Small Time Penalty
+        # Penalize each step by -0.001 to encourage faster landing.
+        reward -= 0.001
 
         # Add observation noise
         if self.observation_noise > 0:
             noise = np.random.normal(0, self.observation_noise, size=obs.shape)
             obs = obs + noise
 
-        # Apply partial observability if enabled
+        # Apply partial observability
         if self.partial_observation and len(obs) == 8:
             obs = np.delete(obs, [5, 6])  # remove angular velocity and left leg info
 
